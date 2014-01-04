@@ -1,0 +1,178 @@
+#!/usr/bin/env node
+/*
+The MIT License (MIT)
+
+Copyright (c) 2014 Tim Boudreau
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+var fs = require('fs'), path = require('path'),
+        child_process = require('child_process');
+
+var args = process.argv.slice(2);
+
+var answers = {};
+if (args.length >= 1) {
+    answers.hostName = args[0]
+}
+if (args.length >= 2) {
+    answers.company = args[1]
+}
+if (args.length >= 3) {
+    answers.locality = args[2]
+}
+
+generateSelfSignedCert(answers, progress, function(err) {
+    console.log('Created ' + answers.hostName + ".key and " + answers.hostName + ".cert");
+});
+
+function progress(err, what) {
+    if (err) {
+        console.log(err);
+        process.exit(1);
+    }
+    console.log(what);
+}
+
+function generateSelfSignedCert(answers, progress, onDone) {
+    var domain = answers.hostName || 'server.local';
+    answers.hostName = domain;
+    var subj = '/' + [
+        "C=US",
+        "ST=MA",
+        "O=" + answers.company || "nobody",
+        "localityName=" + answers.locality || "Here",
+        "commonName=" + domain,
+        "organizationalUnitName=Nothing",
+        "emailAddress=root@" + domain
+    ].join('/');
+    var tmpdirName = new Date().getTime() + '-certgen';
+    var tmpdir = path.join("/tmp", tmpdirName);
+    fs.mkdir(tmpdir, function(err) {
+        if (err)
+            return progress(err);
+        progress(null, "Created " + tmpdir)
+        var env = {PASSPHRASE: randomString(60)};
+        console.log('Pass phrase is ' + env.PASSPHRASE);
+
+        var opts = {cwd: tmpdir, env: env};
+        var createRsaKey = [
+            'openssl',
+            'genrsa',
+            '-des3',
+            '-out',
+            domain + '.key',
+            '-passout',
+            'env:PASSPHRASE',
+            '2048'
+        ].join(' ');
+        progress(null, 'Generating RSA key');
+        child_process.exec(createRsaKey, opts, function(err, stdout, stderr) {
+            console.log(err + " " + stdout + " " + stderr);
+            if (err)
+                return progress(err + ': ' + stdout + ' : ' + stderr);
+
+            progress(null, 'Generating certificate request');
+            var createRequest = [
+                "openssl",
+                "req",
+                "-new",
+                "-batch",
+                "-subj",
+                '"' + subj + '"',
+                "-key",
+                domain + ".key",
+                "-out",
+                domain + ".csr",
+                "-passin env:PASSPHRASE"
+            ].join(' ');
+            child_process.exec(createRequest, opts, function(err, out, stderr) {
+                if (err)
+                    return progress(err + ': ' + out + ' : ' + stderr);
+                // openssl rsa -in $DOMAIN.key.org -out $DOMAIN.key -passin env:PASSPHRASE
+                progress(null, 'Copying RSA key');
+                child_process.exec('cp ' + domain + '.key ' + domain + '.key.orig', opts, function(err, out, stderr) {
+                    if (err)
+                        return progress(err + ': ' + out + ' : ' + stderr);
+                    progress(null, 'Stripping passphrase');
+                    var stripPassphrase = [
+                        'openssl',
+                        'rsa',
+                        '-in',
+                        domain + '.key.orig',
+                        '-out',
+                        domain + '.key',
+                        '-passin',
+                        'env:PASSPHRASE'
+                    ].join(' ');
+                    child_process.exec(stripPassphrase, opts, function(err, out, stderr) {
+                        if (err)
+                            return progress(err + ': ' + out + ' : ' + stderr);
+                        progress(null, 'Generating certificate');
+                        var genCert = [
+                            'openssl',
+                            'x509',
+                            '-req',
+                            '-days',
+                            '3650',
+                            '-in',
+                            domain + '.csr',
+                            '-signkey',
+                            domain + '.key',
+                            '-out',
+                            domain + '.crt'
+                        ].join(' ');
+                        child_process.exec(genCert, opts, function(err, out, stderr) {
+                            if (err)
+                                return progress(err + ': ' + out + ' : ' + stderr);
+                            var filesA = path.join(tmpdir, domain + '.crt')
+                            var filesB = path.join(tmpdir, domain + '.key')
+                            var copyIntoPlace = 'cp ' + filesA + ' ./';
+                            child_process.exec(copyIntoPlace, {}, function(err, out, stdout) {
+                                if (err)
+                                    return progress(err + ': ' + out + ' : ' + stderr);
+                                var copyIntoPlace2 = 'cp ' + filesB + ' ./';
+                                child_process.exec(copyIntoPlace2, {}, function(err, out, stdout) {
+                                    if (err)
+                                        return progress(err + ': ' + out + ' : ' + stderr);
+                                    onDone(null);
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+}
+
+function randomInt(max) {
+    return Math.floor(Math.random() * max);
+}
+
+function randomString(count) {
+    var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyz"
+    count = count || 5;
+    var result = ""
+    var len = chars.length;
+    for (var i = 0; i < count; i++) {
+        result += chars[randomInt(len)]
+    }
+    return result
+}

@@ -1,0 +1,21 @@
+{
+    "name": "certgen",
+    "description": "Generates a self-signed certificate with less crapola than the usual openssl incantations",
+    "version": "0.0.1",
+    "main": "./certgen.js",
+    "author": {
+        "name": "Tim Boudreau",
+        "email": "tim@timboudreau.com"
+    },
+    "keywords": [],
+    "licenses": {
+        "type": "mit"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git://github.com/timboudreau/certgen.git"
+    },
+    "bugs": {
+        "url": "http://github.com/timboudreau/certgen/issues"
+    }
+}
