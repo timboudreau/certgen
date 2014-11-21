@@ -39,15 +39,19 @@ if (args.length >= 3) {
 }
 
 generateSelfSignedCert(answers, progress, function(err) {
-    console.log('Created ' + answers.hostName + ".key and " + answers.hostName + ".cert");
+    log('Created ' + answers.hostName + ".key," + answers.hostName + ".crt and " + answers.hostName + ".pem");
 });
+
+function log(line) {
+    process.stderr.write(line + '\n');
+}
 
 function progress(err, what) {
     if (err) {
-        console.log(err);
+        log(err);
         process.exit(1);
     }
-    console.log(what);
+    log(what);
 }
 
 function generateSelfSignedCert(answers, progress, onDone) {
@@ -62,6 +66,7 @@ function generateSelfSignedCert(answers, progress, onDone) {
         "organizationalUnitName=Nothing",
         "emailAddress=root@" + domain
     ].join('/');
+    console.log('SUBJ: ' + subj);
     var tmpdirName = new Date().getTime() + '-certgen';
     var tmpdir = path.join("/tmp", tmpdirName);
     fs.mkdir(tmpdir, function(err) {
@@ -69,7 +74,7 @@ function generateSelfSignedCert(answers, progress, onDone) {
             return progress(err);
         progress(null, "Created " + tmpdir)
         var env = {PASSPHRASE: randomString(60)};
-        console.log('Pass phrase is ' + env.PASSPHRASE);
+        log('Pass phrase is ' + env.PASSPHRASE);
 
         var opts = {cwd: tmpdir, env: env};
         var createRsaKey = [
@@ -84,7 +89,6 @@ function generateSelfSignedCert(answers, progress, onDone) {
         ].join(' ');
         progress(null, 'Generating RSA key');
         child_process.exec(createRsaKey, opts, function(err, stdout, stderr) {
-            console.log(err + " " + stdout + " " + stderr);
             if (err)
                 return progress(err + ': ' + stdout + ' : ' + stderr);
 
@@ -151,7 +155,11 @@ function generateSelfSignedCert(answers, progress, onDone) {
                                 child_process.exec(copyIntoPlace2, {}, function(err, out, stdout) {
                                     if (err)
                                         return progress(err + ': ' + out + ' : ' + stderr);
-                                    onDone(null);
+                                    var combineIntoPem = 'cat ' + filesA + ' ' + filesB + ' > ./' + domain + '.pem';
+                                    child_process.exec(combineIntoPem, {}, function (err, out, stdout){
+                                        console.log(env.PASSPHRASE);
+                                        onDone(null);
+                                    });
                                 });
                             });
                         });
@@ -169,10 +177,10 @@ function randomInt(max) {
 function randomString(count) {
     var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyz"
     count = count || 5;
-    var result = ""
+    var result = "";
     var len = chars.length;
     for (var i = 0; i < count; i++) {
-        result += chars[randomInt(len)]
+        result += chars[randomInt(len)];
     }
-    return result
+    return result;
 }
